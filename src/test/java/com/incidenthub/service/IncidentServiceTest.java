@@ -47,6 +47,8 @@ class IncidentServiceTest {
   private AuditService auditService;
   @Mock
   private IncidentMetrics incidentMetrics;
+  @Mock
+  private EmailNotificationService emailNotificationService;
 
   @InjectMocks
   private IncidentService incidentService;
