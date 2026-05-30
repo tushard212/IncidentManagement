@@ -7,3 +7,4 @@ frontend/build/
 *.jar
 *.log
 .DS_Store
+uploads/
