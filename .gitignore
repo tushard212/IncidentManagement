@@ -1,0 +1,9 @@
+﻿target/
+frontend/node_modules/
+frontend/build/
+.idea/
+*.iml
+*.class
+*.jar
+*.log
+.DS_Store
