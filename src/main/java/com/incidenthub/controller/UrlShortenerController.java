@@ -2,6 +2,8 @@ package com.incidenthub.controller;
 
 import com.incidenthub.model.ShortenedUrl;
 import com.incidenthub.service.UrlShortenerService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -15,11 +17,13 @@ import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
+@Tag(name = "Share Links", description = "URL shortener for sharing incident links via Slack/Teams")
 public class UrlShortenerController {
 
   private final UrlShortenerService urlShortenerService;
 
   @PostMapping("/api/urls/shorten")
+  @Operation(summary = "Shorten URL", description = "Create a short link with optional expiry")
   public ResponseEntity<?> shortenUrl(@RequestBody Map<String, Object> request, Authentication auth) {
     String originalUrl = (String) request.get("url");
     Integer expiryDays = request.get("expiryDays") != null ? ((Number) request.get("expiryDays")).intValue() : null;
@@ -41,6 +45,7 @@ public class UrlShortenerController {
   }
 
   @GetMapping("/s/{shortCode}")
+  @Operation(summary = "Redirect", description = "Resolve short code and redirect to original URL")
   public ResponseEntity<Void> redirect(@PathVariable String shortCode) {
     try {
       String originalUrl = urlShortenerService.resolveUrl(shortCode);

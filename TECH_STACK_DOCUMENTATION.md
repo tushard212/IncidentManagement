@@ -8,7 +8,8 @@
 5. [Communication & Real-Time](#communication--real-time)
 6. [DevOps & CI/CD](#devops--cicd)
 7. [Design Principles & Patterns](#design-principles--patterns)
-8. [Architecture Decisions](#architecture-decisions)
+8. [Custom Algorithms & Data Structures](#custom-algorithms--data-structures)
+9. [Architecture Decisions](#architecture-decisions)
 
 ---
 
@@ -360,16 +361,48 @@
 
 ---
 
-### 26. Custom Rate Limiting (Token Bucket via AOP)
-**What:** Traffic control mechanism that limits the number of API requests per user/IP within a time window. Token bucket algorithm allows burst traffic while enforcing average rate.
+### 26. Custom Sliding Window Rate Limiter (AOP)
+**What:** Traffic control mechanism that limits API requests per user/IP within a sliding time window. Uses a sliding window log algorithm with a `ConcurrentLinkedDeque` of request timestamps.
 
-**What it does in this project:** Custom `@RateLimit` annotation with configurable limits per endpoint. Prevents API abuse, DDoS attempts, and ensures fair resource usage across users.
+**Algorithm — Sliding Window Log:**
+```
+1. For each incoming request, identify the key (IP / userId / GLOBAL)
+2. Get or create a SlidingWindow object for the key (ConcurrentHashMap lookup)
+3. Remove all timestamps older than (now - windowMillis) from the front of the deque
+4. If remaining count < maxRequests → allow request, add timestamp to deque
+5. Else → reject with 429 Too Many Requests + Retry-After header
+```
 
-**Why chosen:** Custom implementation (vs. Spring Cloud Gateway) allows fine-grained per-endpoint control with annotation-based configuration.
+**Data Structures Used:**
+- `ConcurrentHashMap<String, SlidingWindowRateLimiter>` — one limiter per endpoint (annotation-driven)
+- `ConcurrentHashMap<String, SlidingWindow>` — one window per client key
+- `ConcurrentLinkedDeque<Long>` — timestamp log per client (O(1) head removal, O(1) tail insert)
+- `AtomicInteger` — fast count without full deque traversal
 
-**Best Practice:** Different limits for different endpoints (login stricter than reads). Return `429 Too Many Requests` with `Retry-After` header.
+**Thread Safety:** `synchronized` per-window block ensures correctness without global lock contention.
+
+**Why Sliding Window over Fixed Window:** Fixed window has the boundary problem — a burst at the edge of two windows allows 2x the limit. Sliding window counts across the entire moving window, providing accurate enforcement.
+
+**Why Sliding Window over Token Bucket:** Token bucket allows uncapped bursts if tokens have accumulated. Sliding window enforces a hard cap within any window period — more appropriate for API abuse prevention.
+
+**Configuration (per endpoint):**
+```java
+@RateLimit(maxRequests = 10, windowSeconds = 60, keyType = RateLimit.KeyType.USER)
+```
+- Login: 10 requests/60s per IP (brute-force protection)
+- Create Incident: 10 requests/60s per User
+- Read Incidents: 100 requests/60s per IP
+- Dashboard Stats: 60 requests/60s per IP
+
+**Cleanup:** Background scheduled task (`RateLimiterCleanupTask`) evicts stale entries where `lastAccessTime + 2*window < now` to prevent memory leaks.
+
+**What it does in this project:** Custom `@RateLimit` annotation intercepted by `RateLimitAspect` (AOP Around advice). Automatically resolves client key, enforces limits, and sets HTTP headers (`X-RateLimit-Remaining`, `X-RateLimit-Reset`).
+
+**Why custom implementation:** Production rate limiters (Redis-based, Spring Cloud Gateway) add infrastructure dependencies. This in-memory implementation demonstrates the algorithm knowledge while being production-functional for single-instance deployments.
 
 **Design Principle:** *API Gateway Pattern* — Protect backend services from abuse at the edge.
+
+**Complexity:** O(k) per request where k = number of expired timestamps to evict (amortized O(1) in practice).
 
 ---
 
@@ -480,6 +513,158 @@ Incident.builder()
 
 ## Architecture Decisions
 
+### Custom Algorithms & Data Structures
+
+#### A. Twitter Snowflake ID Generator
+**What:** A distributed unique ID generation algorithm originally designed by Twitter for generating 64-bit unique IDs across multiple data centers without coordination.
+
+**64-bit ID Structure:**
+```
+| 1 bit (unused/sign) | 41 bits (timestamp) | 10 bits (node ID) | 12 bits (sequence) |
+|        0            |    ms since epoch    |   machine/DC ID   |   per-ms counter   |
+```
+
+**Bit Allocation:**
+- **1 bit** — Sign bit (always 0 for positive IDs)
+- **41 bits** — Millisecond timestamp since custom epoch (2024-01-01 UTC) → supports ~69 years
+- **10 bits** — Node/Machine ID → supports 1,024 unique nodes (datacenter + worker)
+- **12 bits** — Sequence counter → 4,096 unique IDs per millisecond per node
+
+**Capacity:** ~4 million unique IDs/second/node. Across 1,024 nodes: ~4 billion IDs/second globally.
+
+**Algorithm:**
+```java
+1. Get current timestamp in milliseconds
+2. If timestamp == lastTimestamp → increment sequence
+     If sequence overflows (> 4095) → spin-wait until next millisecond
+3. If timestamp > lastTimestamp → reset sequence to 0
+4. If timestamp < lastTimestamp → throw ClockMovedBackwards exception
+5. Return: ((timestamp - EPOCH) << 22) | (nodeId << 12) | sequence
+```
+
+**Why Snowflake over UUID:**
+| Property | UUID v4 | Snowflake |
+|----------|---------|-----------|
+| Size | 128 bits (36 chars) | 64 bits (Long) |
+| Sortable | No (random) | Yes (time-ordered) |
+| DB Index | Poor (random inserts) | Excellent (sequential) |
+| Information | None | Embeds timestamp, node, sequence |
+| Performance | Random I/O on B-tree | Sequential I/O (append-mostly) |
+
+**Why Snowflake over Auto-Increment:**
+- Auto-increment requires DB coordination (single point of failure)
+- Exposes record count to clients (security concern)
+- Cannot be generated client-side or in distributed systems
+- Snowflake IDs are globally unique without any coordination
+
+**What it does in this project:**
+- Primary key generator for `Incident`, `User`, `Team`, `OnCallSchedule` entities
+- Implements Hibernate's `IdentifierGenerator` interface for seamless JPA integration
+- Custom epoch (2024-01-01) maximizes the 41-bit timestamp range
+- Singleton pattern ensures sequence continuity within a JVM
+- Utility methods to extract timestamp/nodeId/sequence from any ID (debugging)
+
+**Clock Backward Protection:** If system clock moves backward (NTP sync, VM migration), the generator throws `IllegalStateException` rather than producing duplicate IDs.
+
+**Usage:**
+```java
+@Id
+@GeneratedValue(generator = "snowflake")
+@GenericGenerator(name = "snowflake", type = SnowflakeIdGenerator.class)
+private Long id;
+```
+
+**Design Principle:** *Decentralized ID Generation* — No single point of failure, no coordination overhead, horizontally scalable.
+
+---
+
+#### B. Base62 URL Short Code Generation
+**What:** A URL-safe encoding scheme using 62 characters (A-Z, a-z, 0-9) to generate compact, unique short codes for URL shortening.
+
+**Character Set:**
+```
+ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789
+```
+62 characters × 7-character code = 62^7 = **3.52 trillion** unique combinations.
+
+**Algorithm:**
+```java
+1. Generate 7 random characters using SecureRandom (cryptographically secure)
+2. Each character picked from the 62-char alphabet uniformly
+3. Check DB for collision (existsByShortCode)
+4. If collision → regenerate (loop until unique)
+5. Return unique code
+```
+
+**Why Base62 over Base64:**
+- Base64 includes `+`, `/`, `=` — not URL-safe without encoding
+- Base62 is inherently URL-safe — no special characters needed
+- Shorter URLs are more shareable (Slack, Teams, SMS)
+
+**Why 7 Characters:**
+- 62^6 = 56 billion (sufficient for most apps)
+- 62^7 = 3.52 trillion (virtually collision-free even at scale)
+- 62^8 = 218 trillion (overkill for this use case)
+- 7 chars strikes the balance: short enough to share, long enough to be unique
+
+**Collision Probability (Birthday Problem):**
+- With 1 million URLs: collision probability ≈ 1 in 3.5 million (negligible)
+- With 1 billion URLs: collision probability ≈ 0.014% per generation
+- Retry loop handles the rare collision case
+
+**Security:** Uses `java.security.SecureRandom` (not `Math.random()`) — cryptographically secure PRNG prevents short code prediction/enumeration.
+
+**What it does in this project:**
+- Generates compact shareable links for incident URLs
+- Click tracking per short URL
+- Optional expiry (TTL in days)
+- Per-user URL management (list, stats, delete)
+
+**Design Principle:** *Information Hiding* — Short codes are opaque; original URLs are not derivable from the code.
+
+---
+
+#### C. Redis Distributed Lock (Mutex)
+**What:** A coordination primitive using Redis `SETNX` (SET if Not eXists) with TTL to implement mutual exclusion across distributed application instances.
+
+**Algorithm:**
+```
+1. SETNX lock_key "instance_id" EX ttl_seconds
+   - If key doesn't exist → set it with TTL → lock acquired
+   - If key exists → lock held by another instance → return false
+2. On unlock: DEL lock_key (only if value matches instance_id)
+3. TTL acts as deadlock prevention — lock auto-expires if holder crashes
+```
+
+**Why Redis Lock over DB Lock:**
+- Redis operations are atomic and sub-millisecond
+- DB row locks hold connections and can cause deadlocks
+- Redis TTL provides automatic deadlock recovery
+- Works across multiple database instances
+
+**What it does in this project:**
+- `EscalationScheduler` acquires lock `"escalation_lock"` with 55s TTL (cron runs every 60s)
+- Only one instance across the cluster runs SLA breach detection
+- If holder crashes, lock auto-releases in 55s and another instance takes over
+- Graceful fallback: if Redis is unavailable, lock is granted (single-instance mode)
+
+**Design Principle:** *Leader Election* — In a distributed system, exactly one node performs the scheduled work at any given time.
+
+---
+
+#### D. Concurrent Data Structures Used
+
+| Data Structure | Location | Purpose |
+|---------------|----------|---------|
+| `ConcurrentHashMap` | Rate Limiter | Lock-free per-key window storage |
+| `ConcurrentLinkedDeque` | Sliding Window | O(1) timestamp log with head eviction |
+| `AtomicInteger` | Sliding Window | Lock-free request count |
+| `CompletableFuture` | Escalation Scheduler | Parallel incident processing |
+| `volatile` | Snowflake Generator | Visibility of lastTimestamp across threads |
+| `synchronized` | Snowflake nextId() | Atomicity of timestamp+sequence combo |
+
+---
+
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Authentication | JWT (stateless) | Horizontal scaling without session replication |
@@ -503,6 +688,8 @@ This project demonstrates a **production-ready, enterprise-grade** incident mana
 
 - **14 Spring Boot modules** working together cohesively
 - **7 design patterns** applied in appropriate contexts
+- **4 custom algorithms** (Snowflake ID, Sliding Window Rate Limiter, Base62 Encoding, Distributed Lock)
+- **6 concurrent data structures** (ConcurrentHashMap, ConcurrentLinkedDeque, AtomicInteger, CompletableFuture, volatile, synchronized)
 - **Full-stack** implementation with type-safe frontend-backend integration
 - **Real-time** capabilities with WebSocket
 - **Security** at multiple layers (network, application, data)

@@ -2,6 +2,8 @@ package com.incidenthub.controller;
 
 import com.incidenthub.model.Attachment;
 import com.incidenthub.service.FileStorageService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -18,11 +20,13 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/incidents/{incidentId}/attachments")
 @RequiredArgsConstructor
+@Tag(name = "Attachments", description = "File attachments for incidents")
 public class AttachmentController {
 
   private final FileStorageService fileStorageService;
 
   @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  @Operation(summary = "Upload file", description = "Upload a file attachment to an incident")
   public ResponseEntity<?> uploadFile(
       @PathVariable Long incidentId,
       @RequestParam("file") MultipartFile file,
@@ -43,6 +47,7 @@ public class AttachmentController {
   }
 
   @GetMapping
+  @Operation(summary = "List attachments", description = "Get all attachments for an incident")
   public ResponseEntity<List<Attachment>> getAttachments(@PathVariable Long incidentId) {
     return ResponseEntity.ok(fileStorageService.getAttachmentsByIncident(incidentId));
   }

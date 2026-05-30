@@ -2,6 +2,8 @@ package com.incidenthub.controller;
 
 import com.incidenthub.model.NotificationLog;
 import com.incidenthub.repository.NotificationLogRepository;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -16,12 +18,14 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/notifications")
 @RequiredArgsConstructor
+@Tag(name = "Notifications", description = "Email notification logs and statistics (ADMIN/MANAGER)")
 public class NotificationController {
 
   private final NotificationLogRepository notificationLogRepository;
 
   @GetMapping
   @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+  @Operation(summary = "List notifications", description = "Get paginated email notification logs")
   public ResponseEntity<Page<NotificationLog>> getNotifications(
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "10") int size) {
@@ -32,6 +36,7 @@ public class NotificationController {
 
   @GetMapping("/stats")
   @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+  @Operation(summary = "Notification stats", description = "Get counts of sent/failed notifications")
   public ResponseEntity<Map<String, Object>> getNotificationStats() {
     LocalDateTime last24h = LocalDateTime.now().minusHours(24);
     LocalDateTime last7d = LocalDateTime.now().minusDays(7);

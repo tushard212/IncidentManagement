@@ -2,6 +2,8 @@ package com.incidenthub.controller;
 
 import com.incidenthub.dto.TeamDto;
 import com.incidenthub.service.TeamService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -12,12 +14,14 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/teams")
 @RequiredArgsConstructor
+@Tag(name = "Teams", description = "Team management and member assignments")
 public class TeamController {
 
   private final TeamService teamService;
 
   @PostMapping
   @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+  @Operation(summary = "Create team", description = "Create a new team (ADMIN/MANAGER only)")
   public ResponseEntity<TeamDto.Response> createTeam(@RequestBody TeamDto.CreateRequest request) {
     return ResponseEntity.ok(teamService.createTeam(request));
   }

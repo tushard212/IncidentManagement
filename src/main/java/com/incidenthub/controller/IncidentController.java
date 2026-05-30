@@ -4,6 +4,8 @@ import com.incidenthub.dto.IncidentDto;
 import com.incidenthub.model.enums.IncidentStatus;
 import com.incidenthub.ratelimiter.RateLimit;
 import com.incidenthub.service.IncidentService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -19,6 +21,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/incidents")
 @RequiredArgsConstructor
+@Tag(name = "Incidents", description = "Incident lifecycle management — create, track, escalate, resolve")
 public class IncidentController {
 
   private final IncidentService incidentService;
@@ -26,6 +29,7 @@ public class IncidentController {
   @PostMapping
   @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'ENGINEER')")
   @RateLimit(maxRequests = 10, windowSeconds = 60, keyType = RateLimit.KeyType.USER)
+  @Operation(summary = "Create incident", description = "Create a new incident with optional assignee and team")
   public ResponseEntity<IncidentDto.Response> createIncident(
       @Valid @RequestBody IncidentDto.CreateRequest request,
       Authentication authentication) {
@@ -35,6 +39,7 @@ public class IncidentController {
   @GetMapping
   @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'ENGINEER')")
   @RateLimit(maxRequests = 100, windowSeconds = 60, keyType = RateLimit.KeyType.IP)
+  @Operation(summary = "List incidents", description = "Get paginated list of all incidents")
   public ResponseEntity<Page<IncidentDto.Response>> getAllIncidents(
       @PageableDefault(size = 20) Pageable pageable) {
     return ResponseEntity.ok(incidentService.getAllIncidents(pageable));
@@ -42,6 +47,7 @@ public class IncidentController {
 
   @GetMapping("/{id}")
   @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'ENGINEER')")
+  @Operation(summary = "Get incident", description = "Get incident details with timeline history")
   public ResponseEntity<IncidentDto.Response> getIncident(@PathVariable Long id) {
     return ResponseEntity.ok(incidentService.getIncident(id));
   }
@@ -57,6 +63,7 @@ public class IncidentController {
 
   @PostMapping("/{id}/acknowledge")
   @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'ENGINEER')")
+  @Operation(summary = "Acknowledge incident", description = "Mark incident as acknowledged, stops MTTA clock")
   public ResponseEntity<IncidentDto.Response> acknowledgeIncident(
       @PathVariable Long id,
       Authentication authentication) {
@@ -108,12 +115,14 @@ public class IncidentController {
   @GetMapping("/dashboard/stats")
   @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'ENGINEER')")
   @RateLimit(maxRequests = 60, windowSeconds = 60, keyType = RateLimit.KeyType.IP)
+  @Operation(summary = "Dashboard stats", description = "Get live dashboard statistics — open counts, severity breakdown")
   public ResponseEntity<IncidentDto.DashboardStats> getDashboardStats() {
     return ResponseEntity.ok(incidentService.getDashboardStats());
   }
 
   @DeleteMapping("/{id}")
   @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+  @Operation(summary = "Delete incident", description = "Permanently delete an incident (ADMIN/MANAGER only)")
   public ResponseEntity<Map<String, String>> deleteIncident(
       @PathVariable Long id,
       Authentication authentication) {
