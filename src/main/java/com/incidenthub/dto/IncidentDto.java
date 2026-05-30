@@ -8,6 +8,7 @@ import lombok.*;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 public class IncidentDto {
 
@@ -118,5 +119,23 @@ public class IncidentDto {
   public static class SeverityCount {
     private String severity;
     private long count;
+  }
+
+  @Getter
+  @Setter
+  @NoArgsConstructor
+  @AllArgsConstructor
+  @Builder
+  public static class AnalyticsResponse {
+    private double mttrMinutes;
+    private double mttaMinutes;
+    private int totalIncidents;
+    private int totalResolved;
+    private double slaComplianceRate;
+    private Map<String, Long> incidentsPerDay;
+    private Map<String, Long> bySeverity;
+    private Map<String, Long> byStatus;
+    private Map<String, Double> resolutionBySeverity;
+    private int periodDays;
   }
 }

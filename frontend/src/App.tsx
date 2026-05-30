@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import IncidentList from './pages/IncidentList';
 import IncidentDetail from './pages/IncidentDetail';
+import Analytics from './pages/Analytics';
 import Sidebar from './components/Sidebar';
 import { wsService } from './services/websocket';
 import { WebSocketMessage } from './types';
@@ -42,33 +43,32 @@ function App() {
   };
 
   if (!isAuthenticated) {
-    return <Login onLogin={ handleLogin } />;
+    return <Login onLogin={handleLogin} />;
   }
 
   return (
     <Router>
-    <div className= "app" >
-    <Sidebar onLogout={ handleLogout } />
-      < main className = "main-content" >
-      {
-        notifications.length > 0 && notifications[0] && (
-          <div className={ "toast toast-" + (notifications[0].type === 'SLA_BREACHED' ? 'critical' : 'info') }>
-            <strong>{ notifications[0].type.replace(/_/g, ' ') } </strong>
-            < p style = {{ fontSize: '0.85rem', marginTop: '4px' }
-}>
-  { notifications[0].data?.title }
-  </p>
-  </div>
+      <div className="app">
+        <Sidebar onLogout={handleLogout} />
+        <main className="main-content">
+          {notifications.length > 0 && notifications[0] && (
+            <div className={"toast toast-" + (notifications[0].type === 'SLA_BREACHED' ? 'critical' : 'info')}>
+              <strong>{notifications[0].type.replace(/_/g, ' ')}</strong>
+              <p style={{ fontSize: '0.85rem', marginTop: '4px' }}>
+                {notifications[0].data?.title}
+              </p>
+            </div>
           )}
-<Routes>
-  <Route path="/" element = {< Dashboard />} />
-    < Route path = "/incidents" element = {< IncidentList />} />
-      < Route path = "/incidents/:id" element = {< IncidentDetail />} />
-        < Route path = "*" element = {< Navigate to = "/" />} />
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/incidents" element={<IncidentList />} />
+            <Route path="/incidents/:id" element={<IncidentDetail />} />
+            <Route path="/analytics" element={<Analytics />} />
+            <Route path="*" element={<Navigate to="/" />} />
           </Routes>
-          </main>
-          </div>
-          </Router>
+        </main>
+      </div>
+    </Router>
   );
 }
 

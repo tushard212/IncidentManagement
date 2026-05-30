@@ -31,38 +31,52 @@ public class EscalationScheduler {
   private final EscalationPolicyRepository escalationPolicyRepository;
   private final IncidentTimelineRepository timelineRepository;
   private final WebSocketNotificationService notificationService;
+  private final com.incidenthub.config.DistributedLock distributedLock;
 
   private final ExecutorService executorService = Executors.newFixedThreadPool(4);
+  private static final String ESCALATION_LOCK_KEY = "lock:escalation-scheduler";
 
   /**
    * Runs every 60 seconds to check for SLA breaches and escalate incidents.
-   * Demonstrates: Batch processing + Multithreading + Scheduled jobs
+   * Uses distributed lock to prevent concurrent execution across instances.
+   * Demonstrates: Batch processing + Multithreading + Scheduled jobs +
+   * Distributed Lock
    */
   @Scheduled(fixedRate = 60000)
   @Transactional
   public void checkAndEscalateIncidents() {
-    log.info("Running escalation check at {}", LocalDateTime.now());
-
-    // Find incidents that have breached SLA
-    List<Incident> breachedIncidents = incidentRepository.findBreachedIncidents(
-        List.of(IncidentStatus.OPEN, IncidentStatus.ACKNOWLEDGED, IncidentStatus.INVESTIGATING),
-        LocalDateTime.now());
-
-    if (breachedIncidents.isEmpty()) {
-      log.info("No SLA breaches detected");
+    // Acquire distributed lock (only one instance runs at a time)
+    if (!distributedLock.tryLock(ESCALATION_LOCK_KEY, 55)) {
+      log.debug("Escalation check skipped - another instance holds the lock");
       return;
     }
 
-    log.info("Found {} incidents with SLA breach", breachedIncidents.size());
+    try {
+      log.info("Running escalation check at {}", LocalDateTime.now());
 
-    // Process escalations in parallel using CompletableFuture (multithreading)
-    List<CompletableFuture<Void>> futures = breachedIncidents.stream()
-        .map(incident -> CompletableFuture.runAsync(() -> escalateIncident(incident), executorService))
-        .toList();
+      // Find incidents that have breached SLA
+      List<Incident> breachedIncidents = incidentRepository.findBreachedIncidents(
+          List.of(IncidentStatus.OPEN, IncidentStatus.ACKNOWLEDGED, IncidentStatus.INVESTIGATING),
+          LocalDateTime.now());
 
-    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+      if (breachedIncidents.isEmpty()) {
+        log.info("No SLA breaches detected");
+        return;
+      }
 
-    log.info("Escalation batch completed");
+      log.info("Found {} incidents with SLA breach", breachedIncidents.size());
+
+      // Process escalations in parallel using CompletableFuture (multithreading)
+      List<CompletableFuture<Void>> futures = breachedIncidents.stream()
+          .map(incident -> CompletableFuture.runAsync(() -> escalateIncident(incident), executorService))
+          .toList();
+
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+      log.info("Escalation batch completed");
+    } finally {
+      distributedLock.unlock(ESCALATION_LOCK_KEY);
+    }
   }
 
   private void escalateIncident(Incident incident) {

@@ -41,4 +41,12 @@ public interface IncidentRepository extends JpaRepository<Incident, Long> {
   @Query("SELECT i FROM Incident i WHERE i.status NOT IN ('RESOLVED', 'CLOSED') ORDER BY " +
       "CASE i.severity WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END")
   List<Incident> findActiveIncidentsBySeverityPriority();
+
+  List<Incident> findByCreatedAtAfter(LocalDateTime since);
+
+  @Query("SELECT COUNT(i) FROM Incident i WHERE i.status <> :status AND i.severity = :severity")
+  long countByStatusNotAndSeverity(@Param("status") IncidentStatus status, @Param("severity") String severity);
+
+  @Query("SELECT AVG(DATEDIFF(MINUTE, i.createdAt, i.resolvedAt)) FROM Incident i WHERE i.resolvedAt IS NOT NULL")
+  Double findAverageResolutionTimeMinutes();
 }

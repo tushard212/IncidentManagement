@@ -65,7 +65,7 @@ const Dashboard: React.FC = () => {
           <h3 style={{ marginBottom: '12px', fontSize: '1rem' }}>Severity Distribution</h3>
           <div style={{ display: 'flex', gap: '12px' }}>
             {stats.severityCounts.map((sc) => (
-              <div key={sc.severity} style={{ background: '#1a1f2e', border: '1px solid #2d3748', borderRadius: '8px', padding: '12px 20px' }}>
+              <div key={sc.severity} className="severity-card">
                 <span className={"badge badge-" + sc.severity.toLowerCase()}>{sc.severity}</span>
                 <div style={{ fontSize: '1.5rem', fontWeight: 700, marginTop: '8px' }}>{sc.count}</div>
               </div>

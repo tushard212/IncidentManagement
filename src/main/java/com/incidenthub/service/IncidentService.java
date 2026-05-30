@@ -1,16 +1,20 @@
 package com.incidenthub.service;
 
+import com.incidenthub.config.IncidentMetrics;
 import com.incidenthub.dto.IncidentDto;
 import com.incidenthub.model.*;
 import com.incidenthub.model.enums.IncidentStatus;
 import com.incidenthub.repository.*;
 import com.incidenthub.websocket.WebSocketNotificationService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -24,8 +28,11 @@ public class IncidentService {
   private final TeamRepository teamRepository;
   private final IncidentTimelineRepository timelineRepository;
   private final WebSocketNotificationService notificationService;
+  private final AuditService auditService;
+  private final IncidentMetrics incidentMetrics;
 
   @Transactional
+  @CacheEvict(value = { "dashboardStats", "analytics" }, allEntries = true)
   public IncidentDto.Response createIncident(IncidentDto.CreateRequest request, String reporterUsername) {
     User reporter = userRepository.findByUsername(reporterUsername)
         .orElseThrow(() -> new RuntimeException("Reporter not found"));
@@ -59,6 +66,11 @@ public class IncidentService {
     IncidentDto.Response response = mapToResponse(incident);
     notificationService.notifyIncidentCreated(response);
 
+    // Metrics + Audit
+    incidentMetrics.recordIncidentCreated();
+    auditService.logAction("INCIDENT", incident.getId(), "CREATE",
+        reporterUsername, null, incident.getTitle(), "severity=" + request.getSeverity());
+
     return response;
   }
 
@@ -88,23 +100,29 @@ public class IncidentService {
   }
 
   @Transactional
+  @CacheEvict(value = { "dashboardStats", "analytics" }, allEntries = true)
   public IncidentDto.Response updateIncidentStatus(Long incidentId, IncidentStatus newStatus, String username) {
     Incident incident = incidentRepository.findById(incidentId)
         .orElseThrow(() -> new RuntimeException("Incident not found"));
     User user = userRepository.findByUsername(username)
         .orElseThrow(() -> new RuntimeException("User not found"));
 
+    IncidentStatus oldStatus = incident.getStatus();
     validateStatusTransition(incident.getStatus(), newStatus);
 
     incident.setStatus(newStatus);
     if (newStatus == IncidentStatus.RESOLVED) {
       incident.setResolvedAt(LocalDateTime.now());
+      incidentMetrics.recordIncidentResolved(Duration.between(incident.getCreatedAt(), LocalDateTime.now()));
     } else if (newStatus == IncidentStatus.CLOSED) {
       incident.setClosedAt(LocalDateTime.now());
     }
 
     incident = incidentRepository.save(incident);
     addTimelineEntry(incident, user, newStatus.name(), "Status changed to " + newStatus);
+
+    auditService.logAction("INCIDENT", incidentId, "STATUS_CHANGE",
+        username, oldStatus.name(), newStatus.name(), "status_transition");
 
     IncidentDto.Response response = mapToResponse(incident);
     notificationService.notifyIncidentUpdated(response);
@@ -195,6 +213,7 @@ public class IncidentService {
   }
 
   @Transactional(readOnly = true)
+  @Cacheable(value = "dashboardStats")
   public IncidentDto.DashboardStats getDashboardStats() {
     long open = incidentRepository.countByStatus(IncidentStatus.OPEN);
     long ack = incidentRepository.countByStatus(IncidentStatus.ACKNOWLEDGED);
