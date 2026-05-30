@@ -8,6 +8,7 @@ import com.incidenthub.model.enums.IncidentStatus;
 import com.incidenthub.repository.EscalationPolicyRepository;
 import com.incidenthub.repository.IncidentRepository;
 import com.incidenthub.repository.IncidentTimelineRepository;
+import com.incidenthub.service.EmailNotificationService;
 import com.incidenthub.websocket.WebSocketNotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,7 @@ public class EscalationScheduler {
   private final EscalationPolicyRepository escalationPolicyRepository;
   private final IncidentTimelineRepository timelineRepository;
   private final WebSocketNotificationService notificationService;
+  private final EmailNotificationService emailNotificationService;
   private final com.incidenthub.config.DistributedLock distributedLock;
 
   private final ExecutorService executorService = Executors.newFixedThreadPool(4);
@@ -107,6 +109,9 @@ public class EscalationScheduler {
 
           log.info("Incident {} escalated to level {} -> {}", incident.getId(), nextLevel,
               ep.getTargetUser().getFullName());
+
+          // Send escalation email notification
+          emailNotificationService.sendIncidentEscalatedNotification(incident, ep.getTargetUser());
         }
       }
 

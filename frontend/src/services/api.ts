@@ -79,4 +79,42 @@ export const getTeamSchedules = (teamId: number) =>
 export const getCurrentOnCall = (teamId: number) =>
   api.get(`/oncall/team/${teamId}/current`);
 
+// Notifications (Admin/Manager)
+export const getNotifications = (page = 0, size = 5) =>
+  api.get(`/notifications?page=${page}&size=${size}`);
+
+export const getNotificationStats = () =>
+  api.get('/notifications/stats');
+
+// Attachments
+export const getAttachments = (incidentId: number) =>
+  api.get(`/incidents/${incidentId}/attachments`);
+
+export const uploadAttachment = (incidentId: number, file: File) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return api.post(`/incidents/${incidentId}/attachments`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+export const downloadAttachment = (incidentId: number, attachmentId: number) =>
+  api.get(`/incidents/${incidentId}/attachments/${attachmentId}/download`, { responseType: 'blob' });
+
+export const deleteAttachment = (incidentId: number, attachmentId: number) =>
+  api.delete(`/incidents/${incidentId}/attachments/${attachmentId}`);
+
+// URL Shortener
+export const shortenUrl = (originalUrl: string, expiresInDays?: number) =>
+  api.post('/urls/shorten', { url: originalUrl, expiryDays: expiresInDays });
+
+export const getMyUrls = () =>
+  api.get('/urls');
+
+export const getUrlStats = (shortCode: string) =>
+  api.get(`/urls/${shortCode}/stats`);
+
+export const deleteShortUrl = (shortCode: string) =>
+  api.delete(`/urls/${shortCode}`);
+
 export default api;

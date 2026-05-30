@@ -1,17 +1,30 @@
-﻿import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getIncident, acknowledgeIncident, updateIncidentStatus, addNote, deleteIncident } from '../services/api';
+import { getIncident, acknowledgeIncident, updateIncidentStatus, addNote, deleteIncident, getAttachments, uploadAttachment, downloadAttachment, deleteAttachment } from '../services/api';
 import { Incident } from '../types';
+
+interface Attachment {
+  id: number;
+  fileName: string;
+  contentType: string;
+  fileSize: number;
+  uploadedBy: string;
+  uploadedAt: string;
+}
 
 const IncidentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [incident, setIncident] = useState<Incident | null>(null);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState('');
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     loadIncident();
+    loadAttachments();
   }, [id]);
 
   const loadIncident = async () => {
@@ -22,6 +35,15 @@ const IncidentDetail: React.FC = () => {
       console.error('Failed to load incident', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadAttachments = async () => {
+    try {
+      const response = await getAttachments(Number(id));
+      setAttachments(response.data);
+    } catch (err) {
+      console.error('Failed to load attachments', err);
     }
   };
 
@@ -65,6 +87,47 @@ const IncidentDetail: React.FC = () => {
     }
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      await uploadAttachment(Number(id), file);
+      await loadAttachments();
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to upload file');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDownload = async (attachment: Attachment) => {
+    try {
+      const response = await downloadAttachment(Number(id), attachment.id);
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', attachment.fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Failed to download file');
+    }
+  };
+
+  const handleDeleteAttachment = async (attachmentId: number) => {
+    if (!window.confirm('Delete this attachment?')) return;
+    try {
+      await deleteAttachment(Number(id), attachmentId);
+      await loadAttachments();
+    } catch (err) {
+      alert('Failed to delete attachment');
+    }
+  };
+
   const getUserRole = (): string => {
     const user = sessionStorage.getItem('user');
     if (user) {
@@ -73,24 +136,26 @@ const IncidentDetail: React.FC = () => {
     return '';
   };
 
-  if (loading) return <div style={ { padding: '40px', textAlign: 'center' } }> Loading...</div>;
-  if (!incident) return <div>Incident not found </div>;
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  if (loading) return <div style={{ padding: '40px', textAlign: 'center' }}>Loading...</div>;
+  if (!incident) return <div>Incident not found</div>;
 
   const getNextActions = () => {
     switch (incident.status) {
       case 'OPEN':
-        return [
-          { label: 'Acknowledge', action: () => handleAcknowledge(), className: 'btn-warning' },
-        ];
+        return [{ label: 'Acknowledge', action: () => handleAcknowledge(), className: 'btn-warning' }];
       case 'ACKNOWLEDGED':
         return [
           { label: 'Start Investigating', action: () => handleStatusChange('INVESTIGATING'), className: 'btn-warning' },
           { label: 'Resolve', action: () => handleStatusChange('RESOLVED'), className: 'btn-success' },
         ];
       case 'INVESTIGATING':
-        return [
-          { label: 'Resolve', action: () => handleStatusChange('RESOLVED'), className: 'btn-success' },
-        ];
+        return [{ label: 'Resolve', action: () => handleStatusChange('RESOLVED'), className: 'btn-success' }];
       case 'RESOLVED':
         return [
           { label: 'Close', action: () => handleStatusChange('CLOSED'), className: 'btn-primary' },
@@ -103,100 +168,114 @@ const IncidentDetail: React.FC = () => {
 
   return (
     <div>
-    <div className= "page-header" >
-    <div>
-    <button onClick={ () => navigate('/incidents') } className = "btn btn-sm"
-  style = {{ background: '#374151', color: '#e7e9ea', marginBottom: '12px' }
-}>
-  Back to Incidents
-    </button>
-    < h2 >#{ incident.id } - { incident.title } </h2>
-      </div>
-      </div>
-
-      < div style = {{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
+      <div className="page-header">
         <div>
-        <div style={ { background: '#1a1f2e', border: '1px solid #2d3748', borderRadius: '12px', padding: '24px', marginBottom: '20px' } }>
-          <div style={ { display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' } }>
-            <span className={ "badge badge-" + incident.severity.toLowerCase() }> { incident.severity } </span>
-              < span className = { "badge badge-"+incident.status.toLowerCase() } > { incident.status } </span>
-{ incident.slaBreached && <span className="sla-breached" > SLA BREACHED </span> }
-</div>
+          <button onClick={() => navigate('/incidents')} className="btn btn-sm" style={{ background: '#374151', color: '#e7e9ea', marginBottom: '12px' }}>
+            Back to Incidents
+          </button>
+          <h2>#{incident.id} - {incident.title}</h2>
+        </div>
+      </div>
 
-  < p style = {{ color: '#9ca3af', marginBottom: '20px' }}> { incident.description } </p>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
+        <div>
+          <div className="detail-card">
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+              <span className={"badge badge-" + incident.severity.toLowerCase()}>{incident.severity}</span>
+              <span className={"badge badge-" + incident.status.toLowerCase()}>{incident.status}</span>
+              {incident.slaBreached && <span className="sla-breached">SLA BREACHED</span>}
+            </div>
 
-    < div style = {{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '0.85rem' }}>
-      <div><span style={ { color: '#6b7280' } }> Service: </span>{incident.service || '-'}</div >
-        <div><span style={ { color: '#6b7280' } }> Assignee: </span>{incident.assigneeName || 'Unassigned'}</div >
-          <div><span style={ { color: '#6b7280' } }> Reporter: </span>{incident.reporterName}</div >
-            <div><span style={ { color: '#6b7280' } }> Team: </span>{incident.teamName || '-'}</div >
-              <div><span style={ { color: '#6b7280' } }> Created: </span>{new Date(incident.createdAt).toLocaleString()}</div >
-                <div><span style={ { color: '#6b7280' } }> SLA Deadline: </span>{new Date(incident.slaDeadline).toLocaleString()}</div >
-                {
-                  incident.acknowledgedAt && (
-                    <div><span style={ { color: '#6b7280' } }> Acknowledged: </span>{new Date(incident.acknowledgedAt).toLocaleString()}</div >
-              )}
-{
-  incident.resolvedAt && (
-    <div><span style={ { color: '#6b7280' } }> Resolved: </span>{new Date(incident.resolvedAt).toLocaleString()}</div >
-              )
-}
-<div><span style={ { color: '#6b7280' } }> Escalation Level: </span>{incident.escalationLevel}</div >
-  </div>
-  </div>
+            <p style={{ color: '#9ca3af', marginBottom: '20px' }}>{incident.description}</p>
 
-  < div style = {{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-  {
-    getNextActions().map((action, idx) => (
-      <button key= { idx } className = { "btn " + action.className } onClick = { action.action } >
-      { action.label }
-      </button>
-    ))
-  }
-{
-  (getUserRole() === 'ADMIN' || getUserRole() === 'MANAGER') && (
-    <button className="btn btn-danger" onClick = { handleDelete } >
-      Delete Incident
-        </button>
-            )
-}
-</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '0.85rem' }}>
+              <div><span style={{ color: '#6b7280' }}>Service: </span>{incident.service || '-'}</div>
+              <div><span style={{ color: '#6b7280' }}>Assignee: </span>{incident.assigneeName || 'Unassigned'}</div>
+              <div><span style={{ color: '#6b7280' }}>Reporter: </span>{incident.reporterName}</div>
+              <div><span style={{ color: '#6b7280' }}>Team: </span>{incident.teamName || '-'}</div>
+              <div><span style={{ color: '#6b7280' }}>Created: </span>{new Date(incident.createdAt).toLocaleString()}</div>
+              <div><span style={{ color: '#6b7280' }}>SLA Deadline: </span>{new Date(incident.slaDeadline).toLocaleString()}</div>
+              {incident.acknowledgedAt && <div><span style={{ color: '#6b7280' }}>Acknowledged: </span>{new Date(incident.acknowledgedAt).toLocaleString()}</div>}
+              {incident.resolvedAt && <div><span style={{ color: '#6b7280' }}>Resolved: </span>{new Date(incident.resolvedAt).toLocaleString()}</div>}
+              <div><span style={{ color: '#6b7280' }}>Escalation Level: </span>{incident.escalationLevel}</div>
+            </div>
+          </div>
 
-  < div style = {{ background: '#1a1f2e', border: '1px solid #2d3748', borderRadius: '12px', padding: '20px' }}>
-    <h4 style={ { marginBottom: '12px' } }> Add Note </h4>
-      < form onSubmit = { handleAddNote } style = {{ display: 'flex', gap: '8px' }}>
-        <input
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+            {getNextActions().map((action, idx) => (
+              <button key={idx} className={"btn " + action.className} onClick={action.action}>{action.label}</button>
+            ))}
+            {(getUserRole() === 'ADMIN' || getUserRole() === 'MANAGER') && (
+              <button className="btn btn-danger" onClick={handleDelete}>Delete Incident</button>
+            )}
+          </div>
+
+          {/* Attachments Section */}
+          <div className="detail-card" style={{ marginBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h4>Attachments ({attachments.length})</h4>
+              <label className="btn btn-primary btn-sm" style={{ cursor: 'pointer', margin: 0 }}>
+                {uploading ? 'Uploading...' : 'Upload File'}
+                <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} disabled={uploading} />
+              </label>
+            </div>
+            {attachments.length === 0 ? (
+              <p style={{ color: '#6b7280', fontSize: '0.85rem' }}>No attachments yet</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {attachments.map((att) => (
+                  <div key={att.id} className="attachment-item">
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 500 }}>{att.fileName}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                        {formatFileSize(att.fileSize)} &middot; {att.uploadedBy} &middot; {new Date(att.uploadedAt).toLocaleString()}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button className="btn btn-sm" style={{ background: '#1d4ed8', color: '#fff', padding: '4px 10px' }} onClick={() => handleDownload(att)}>Download</button>
+                      <button className="btn btn-sm" style={{ background: '#dc2626', color: '#fff', padding: '4px 10px' }} onClick={() => handleDeleteAttachment(att.id)}>Delete</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Add Note */}
+          <div className="detail-card">
+            <h4 style={{ marginBottom: '12px' }}>Add Note</h4>
+            <form onSubmit={handleAddNote} style={{ display: 'flex', gap: '8px' }}>
+              <input
                 type="text"
-value = { note }
-onChange = {(e) => setNote(e.target.value)}
-placeholder = "Add a note or update..."
-style = {{ flex: 1, padding: '10px', background: '#0f1419', border: '1px solid #374151', borderRadius: '8px', color: '#e7e9ea' }}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Add a note or update..."
+                style={{ flex: 1, padding: '10px', background: '#0f1419', border: '1px solid #374151', borderRadius: '8px', color: '#e7e9ea' }}
               />
-  < button type = "submit" className = "btn btn-primary btn-sm" > Add </button>
-    </form>
-    </div>
-    </div>
+              <button type="submit" className="btn btn-primary btn-sm">Add</button>
+            </form>
+          </div>
+        </div>
 
-    < div style = {{ background: '#1a1f2e', border: '1px solid #2d3748', borderRadius: '12px', padding: '24px' }}>
-      <h4 style={ { marginBottom: '16px' } }> Timeline </h4>
-        < div className = "timeline" >
-        {
-          incident.timeline.map((entry) => (
-            <div key= { entry.id } className = "timeline-item" >
-            <div>
-            <div className="timeline-action" > { entry.action } </div>
-          < div className = "timeline-message" > { entry.message } </div>
-          < div className = "timeline-meta" >
-          { entry.performedByName } - { new Date(entry.createdAt).toLocaleString() }
+        {/* Timeline */}
+        <div className="detail-card">
+          <h4 style={{ marginBottom: '16px' }}>Timeline</h4>
+          <div className="timeline">
+            {incident.timeline.map((entry) => (
+              <div key={entry.id} className="timeline-item">
+                <div>
+                  <div className="timeline-action">{entry.action}</div>
+                  <div className="timeline-message">{entry.message}</div>
+                  <div className="timeline-meta">
+                    {entry.performedByName} - {new Date(entry.createdAt).toLocaleString()}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-          </div>
-          </div>
-          ))
-        }
-          </div>
-          </div>
-          </div>
-          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 

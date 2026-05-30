@@ -30,6 +30,7 @@ public class IncidentService {
   private final WebSocketNotificationService notificationService;
   private final AuditService auditService;
   private final IncidentMetrics incidentMetrics;
+  private final EmailNotificationService emailNotificationService;
 
   @Transactional
   @CacheEvict(value = { "dashboardStats", "analytics" }, allEntries = true)
@@ -65,6 +66,11 @@ public class IncidentService {
     // Notify via WebSocket
     IncidentDto.Response response = mapToResponse(incident);
     notificationService.notifyIncidentCreated(response);
+
+    // Send email notification to assignee
+    if (incident.getAssignee() != null) {
+      emailNotificationService.sendIncidentCreatedNotification(incident, incident.getAssignee());
+    }
 
     // Metrics + Audit
     incidentMetrics.recordIncidentCreated();
@@ -114,6 +120,8 @@ public class IncidentService {
     if (newStatus == IncidentStatus.RESOLVED) {
       incident.setResolvedAt(LocalDateTime.now());
       incidentMetrics.recordIncidentResolved(Duration.between(incident.getCreatedAt(), LocalDateTime.now()));
+      // Send resolved notification to reporter
+      emailNotificationService.sendIncidentResolvedNotification(incident, incident.getReporter());
     } else if (newStatus == IncidentStatus.CLOSED) {
       incident.setClosedAt(LocalDateTime.now());
     }

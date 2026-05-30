@@ -682,3 +682,42 @@ body.light-theme .analytics-row {
   margin-top: 4px;
   text-align: center;
 }
+
+/* Detail Card */
+.detail-card {
+  background: #1a1f2e;
+  border: 1px solid #2d3748;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 20px;
+}
+
+body.light-theme .detail-card {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  color: #1e293b;
+}
+
+/* Attachment Item */
+.attachment-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: #0f1419;
+  border: 1px solid #2d3748;
+  border-radius: 8px;
+}
+
+body.light-theme .attachment-item {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #1e293b;
+}
+
+body.light-theme .detail-card input,
+body.light-theme .detail-card select {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #1e293b !important;
+}

@@ -1,13 +1,38 @@
 ﻿import React, { useEffect, useState } from 'react';
-import { getDashboardStats, getIncidents } from '../services/api';
+import { getDashboardStats, getIncidents, getNotificationStats, getNotifications } from '../services/api';
 import { DashboardStats, Incident } from '../types';
 import { useNavigate } from 'react-router-dom';
+
+interface NotificationLog {
+  id: number;
+  recipientEmail: string;
+  recipientName: string;
+  subject: string;
+  type: string;
+  status: string;
+  incidentId: number;
+  incidentTitle: string;
+  sentAt: string;
+  errorMessage: string | null;
+}
+
+interface NotifStats {
+  totalSent: number;
+  totalFailed: number;
+  last24h: number;
+  failedLast7d: number;
+}
 
 const Dashboard: React.FC = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentIncidents, setRecentIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
+  const [notifStats, setNotifStats] = useState<NotifStats | null>(null);
+  const [notifications, setNotifications] = useState<NotificationLog[]>([]);
   const navigate = useNavigate();
+
+  const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+  const isAdminOrManager = user.role === 'ADMIN' || user.role === 'MANAGER';
 
   useEffect(() => {
     loadData();
@@ -21,6 +46,19 @@ const Dashboard: React.FC = () => {
       ]);
       setStats(statsRes.data);
       setRecentIncidents(incidentsRes.data.content);
+
+      if (isAdminOrManager) {
+        try {
+          const [nStatsRes, nLogsRes] = await Promise.all([
+            getNotificationStats(),
+            getNotifications(0, 5),
+          ]);
+          setNotifStats(nStatsRes.data);
+          setNotifications(nLogsRes.data.content);
+        } catch (e) {
+          console.error('Failed to load notification data', e);
+        }
+      }
     } catch (err) {
       console.error('Failed to load dashboard data', err);
     } finally {
@@ -71,6 +109,57 @@ const Dashboard: React.FC = () => {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {isAdminOrManager && notifStats && (
+        <div style={{ marginBottom: '30px' }}>
+          <h3 style={{ marginBottom: '12px', fontSize: '1rem' }}>Email Notifications</h3>
+          <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+            <div className="stat-card" style={{ borderLeft: '4px solid #10b981' }}>
+              <div className="stat-value">{notifStats.totalSent}</div>
+              <div className="stat-label">Total Sent</div>
+            </div>
+            <div className="stat-card" style={{ borderLeft: '4px solid #ef4444' }}>
+              <div className="stat-value">{notifStats.totalFailed}</div>
+              <div className="stat-label">Failed</div>
+            </div>
+            <div className="stat-card" style={{ borderLeft: '4px solid #3b82f6' }}>
+              <div className="stat-value">{notifStats.last24h}</div>
+              <div className="stat-label">Last 24h</div>
+            </div>
+            <div className="stat-card" style={{ borderLeft: '4px solid #f59e0b' }}>
+              <div className="stat-value">{notifStats.failedLast7d}</div>
+              <div className="stat-label">Failed (7d)</div>
+            </div>
+          </div>
+
+          {notifications.length > 0 && (
+            <div className="incidents-table" style={{ marginTop: '12px' }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Recipient</th>
+                    <th>Type</th>
+                    <th>Incident</th>
+                    <th>Status</th>
+                    <th>Sent At</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {notifications.map((n) => (
+                    <tr key={n.id}>
+                      <td>{n.recipientName}</td>
+                      <td><span className="badge" style={{ background: n.type === 'INCIDENT_ESCALATED' ? '#ef4444' : n.type === 'INCIDENT_CREATED' ? '#3b82f6' : '#10b981', color: '#fff', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem' }}>{n.type.replace('INCIDENT_', '')}</span></td>
+                      <td style={{ cursor: 'pointer', color: '#60a5fa' }} onClick={() => navigate('/incidents/' + n.incidentId)}>#{n.incidentId} {n.incidentTitle}</td>
+                      <td><span style={{ color: n.status === 'SENT' ? '#10b981' : '#ef4444', fontWeight: 600 }}>{n.status}</span></td>
+                      <td style={{ fontSize: '0.8rem', color: '#6b7280' }}>{new Date(n.sentAt).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
