@@ -40,25 +40,25 @@ export const register = (data: any) =>
 export const getIncidents = (page = 0, size = 20) =>
   api.get(`/incidents?page=${page}&size=${size}&sort=createdAt,desc`);
 
-export const getIncident = (id: number) =>
+export const getIncident = (id: string) =>
   api.get(`/incidents/${id}`);
 
 export const createIncident = (data: any) =>
   api.post('/incidents', data);
 
-export const updateIncident = (id: number, data: any) =>
+export const updateIncident = (id: string, data: any) =>
   api.put(`/incidents/${id}`, data);
 
-export const acknowledgeIncident = (id: number) =>
+export const acknowledgeIncident = (id: string) =>
   api.post(`/incidents/${id}/acknowledge`);
 
-export const updateIncidentStatus = (id: number, status: string) =>
+export const updateIncidentStatus = (id: string, status: string) =>
   api.post(`/incidents/${id}/status?status=${status}`);
 
-export const addNote = (id: number, message: string) =>
+export const addNote = (id: string, message: string) =>
   api.post(`/incidents/${id}/notes`, { message });
 
-export const deleteIncident = (id: number) =>
+export const deleteIncident = (id: string) =>
   api.delete(`/incidents/${id}`);
 
 export const getDashboardStats = () =>
@@ -69,14 +69,14 @@ export const getIncidentsByStatus = (status: string, page = 0) =>
 
 // Teams
 export const getTeams = () => api.get('/teams');
-export const getTeam = (id: number) => api.get(`/teams/${id}`);
+export const getTeam = (id: string) => api.get(`/teams/${id}`);
 export const createTeam = (data: any) => api.post('/teams', data);
 
 // On-Call
-export const getTeamSchedules = (teamId: number) =>
+export const getTeamSchedules = (teamId: string) =>
   api.get(`/oncall/team/${teamId}`);
 
-export const getCurrentOnCall = (teamId: number) =>
+export const getCurrentOnCall = (teamId: string) =>
   api.get(`/oncall/team/${teamId}/current`);
 
 // Notifications (Admin/Manager)
@@ -87,10 +87,10 @@ export const getNotificationStats = () =>
   api.get('/notifications/stats');
 
 // Attachments
-export const getAttachments = (incidentId: number) =>
+export const getAttachments = (incidentId: string) =>
   api.get(`/incidents/${incidentId}/attachments`);
 
-export const uploadAttachment = (incidentId: number, file: File) => {
+export const uploadAttachment = (incidentId: string, file: File) => {
   const formData = new FormData();
   formData.append('file', file);
   return api.post(`/incidents/${incidentId}/attachments`, formData, {
@@ -98,10 +98,10 @@ export const uploadAttachment = (incidentId: number, file: File) => {
   });
 };
 
-export const downloadAttachment = (incidentId: number, attachmentId: number) =>
+export const downloadAttachment = (incidentId: string, attachmentId: string) =>
   api.get(`/incidents/${incidentId}/attachments/${attachmentId}/download`, { responseType: 'blob' });
 
-export const deleteAttachment = (incidentId: number, attachmentId: number) =>
+export const deleteAttachment = (incidentId: string, attachmentId: string) =>
   api.delete(`/incidents/${incidentId}/attachments/${attachmentId}`);
 
 // URL Shortener

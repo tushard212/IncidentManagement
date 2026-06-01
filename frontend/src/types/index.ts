@@ -1,10 +1,10 @@
 export interface User {
-  id: number;
+  id: string;
   username: string;
   email: string;
   fullName: string;
   role: 'ADMIN' | 'MANAGER' | 'ENGINEER';
-  teamId?: number;
+  teamId?: string;
   isOnCall: boolean;
 }
 
@@ -12,21 +12,21 @@ export interface AuthResponse {
   token: string;
   username: string;
   role: string;
-  userId: number;
+  userId: string;
 }
 
 export interface Incident {
-  id: number;
+  id: string;
   title: string;
   description: string;
   severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
   status: 'OPEN' | 'ACKNOWLEDGED' | 'INVESTIGATING' | 'RESOLVED' | 'CLOSED';
   assigneeName: string | null;
-  assigneeId: number | null;
+  assigneeId: string | null;
   reporterName: string;
-  reporterId: number;
+  reporterId: string;
   teamName: string | null;
-  teamId: number | null;
+  teamId: string | null;
   service: string;
   createdAt: string;
   acknowledgedAt: string | null;
@@ -39,7 +39,7 @@ export interface Incident {
 }
 
 export interface TimelineEntry {
-  id: number;
+  id: string;
   action: string;
   message: string;
   performedByName: string;
@@ -57,7 +57,7 @@ export interface DashboardStats {
 }
 
 export interface Team {
-  id: number;
+  id: string;
   name: string;
   description: string;
   memberCount: number;
@@ -66,7 +66,7 @@ export interface Team {
 }
 
 export interface TeamMember {
-  id: number;
+  id: string;
   username: string;
   fullName: string;
   role: string;
